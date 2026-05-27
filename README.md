@@ -32,6 +32,22 @@ npx skills add henryzhuhr/skills --copy --agent claude-code -y --skill <skill-na
 
 - 使用 `--agent claude-code` 参数将自动设置安装目录为 `./claude/skills`
 
+### 🧭 go-code-review-checklist
+
+[`SKILL.md`](./skills/go-code-review-checklist/SKILL.md)：Go 代码审查 checklist，用于审查 Go 项目的变更、PR、diff 或提交，按正确性、错误处理、并发、context、接口设计、测试、安全、性能和可维护性系统发现问题。
+
+```bash
+npx skills add henryzhuhr/skills --copy --agent claude-code -y --skill go-code-review-checklist
+```
+
+### 🛠️ skill-creator
+
+[`SKILL.md`](./skills/skill-creator/SKILL.md)：创建、修改和优化技能，支持运行 evals 评估技能性能，基准测试和描述优化。
+
+```bash
+npx skills add henryzhuhr/skills --copy --agent claude-code -y --skill skill-creator
+```
+
 ### 📝 git-commit
 
 [`SKILL.md`](./skills/git-commit/SKILL.md)：Use When 提交代码到 git 仓库，使用 commit message
