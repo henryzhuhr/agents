@@ -4,8 +4,8 @@
 
 - [快速开始](#快速开始)
 - [技能列表](#技能列表)
-  - [git-commit-helper](#-git-commit-helper)
-  - [git-worktree-helper](#-git-worktree-helper)
+  - [git-commit](#-git-commit)
+  - [git-worktree](#-git-worktree)
 
 ## 快速开始
 
@@ -32,18 +32,18 @@ npx skills add henryzhuhr/skills --copy --agent claude-code -y --skill <skill-na
 
 - 使用 `--agent claude-code` 参数将自动设置安装目录为 `./claude/skills`
 
-### 📝 git-commit-helper
+### 📝 git-commit
 
-[`SKILL.md`](./skills/git-commit-helper/SKILL.md)：Use When 提交代码到 git 仓库，使用 commit message
+[`SKILL.md`](./skills/git-commit/SKILL.md)：Use When 提交代码到 git 仓库，使用 commit message
 
 ```bash
-npx skills add henryzhuhr/skills --copy --agent claude-code -y --skill git-commit-helper
+npx skills add henryzhuhr/skills --copy --agent claude-code -y --skill git-commit
 ```
 
-### 🌳 git-worktree-helper
+### 🌳 git-worktree
 
-[`SKILL.md`](./skills/git-worktree-helper/SKILL.md)：检查、创建和管理 Git worktree，用于并行分支开发。适用于需要按本地分支模式批量创建 worktree、把 worktree 放到仓库同级目录、避免为已在其他目录检出的分支重复创建 worktree、核对分支与 worktree 路径映射，或在多个分支上修改前先准备隔离工作区的场景。
+[`SKILL.md`](./skills/git-worktree/SKILL.md)：检查、创建和管理 Git worktree，用于并行分支开发。适用于需要按本地分支模式批量创建 worktree、把 worktree 放到当前仓库的 .worktrees 目录、避免为已在其他目录检出的分支重复创建 worktree、核对分支与 worktree 路径映射，或在多个分支上修改前先准备隔离工作区的场景。
 
 ```bash
-npx skills add henryzhuhr/skills --copy --agent claude-code -y --skill git-worktree-helper
+npx skills add henryzhuhr/skills --copy --agent claude-code -y --skill git-worktree
 ```

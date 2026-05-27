@@ -1,5 +1,5 @@
 ---
-name: git-commit-helper
+name: git-commit
 description: Use When 提交代码到 git 仓库，使用 commit message
 ---
 
