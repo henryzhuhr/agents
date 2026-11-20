@@ -24,7 +24,7 @@ type App struct {
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*App, error) {
-	db, err := database.OpenMySQL(context.Background(), cfg.MySQL.DSN)
+	db, err := database.OpenMySQL(context.Background(), cfg.Infra.MySQL)
 	if err != nil {
 		return nil, err
 	}
@@ -72,12 +72,8 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		return err
 	case <-ctx.Done():
-		// 请求取消后仍需一个独立的上下文等待在途请求结束。
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := a.server.Shutdown(shutdownCtx); err != nil {
-			_ = a.server.Close()
-			return fmt.Errorf("shutdown HTTP server: %w", err)
+		if err := a.shutdown(ctx); err != nil {
+			return err
 		}
 		err := <-stopped
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -85,6 +81,21 @@ func (a *App) Run(ctx context.Context) error {
 		}
 		return nil
 	}
+}
+
+const shutdownTimeout = 15 * time.Second
+
+// shutdown 等待在途请求结束；等待窗口大于 HTTP WriteTimeout，避免先关数据库。
+func (a *App) shutdown(ctx context.Context) error {
+	a.logger.InfoContext(ctx, "shutting down HTTP server")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := a.server.Shutdown(shutdownCtx); err != nil {
+		_ = a.server.Close()
+		return fmt.Errorf("shutdown HTTP server: %w", err)
+	}
+	a.logger.InfoContext(ctx, "HTTP server stopped")
+	return nil
 }
 
 func closeDatabase(db *gorm.DB) error {

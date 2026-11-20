@@ -15,12 +15,12 @@ import (
 // 请求与响应类型留在对应功能文件，不与业务实体共用绑定标签。
 type createRequest struct {
 	UserID uint64              `json:"user_id" binding:"required,gt=0"`
-	Items  []createItemRequest `json:"items" binding:"required,min=1,dive"`
+	Items  []createItemRequest `json:"items" binding:"required,min=1,max=100,dive"`
 }
 
 type createItemRequest struct {
-	SKU      string `json:"sku" binding:"required"`
-	Quantity int    `json:"quantity" binding:"required,gt=0"`
+	SKU      string `json:"sku" binding:"required,max=64"`
+	Quantity int    `json:"quantity" binding:"required,gt=0,lte=2147483647"`
 }
 
 type createResponse struct {
@@ -44,6 +44,8 @@ func (r createRequest) orderItems() []entity.OrderItem {
 }
 
 // newCreateResponse 把业务实体转成 HTTP 响应。
+const maxRequestBodyBytes = 1 << 20
+
 func newCreateResponse(order entity.Order) createResponse {
 	items := make([]itemResponse, len(order.Items))
 	for i, item := range order.Items {
@@ -56,7 +58,13 @@ func NewCreateHandler(svcCtx *svc.ServiceContext) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		var request createRequest
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxRequestBodyBytes)
 		if err := c.ShouldBindJSON(&request); err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
+				return
+			}
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order request"})
 			return
 		}

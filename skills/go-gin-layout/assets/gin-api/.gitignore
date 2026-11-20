@@ -5,3 +5,6 @@
 
 # 本地实际配置，从 configs/config.example.yaml 复制
 configs/config.yaml
+.DS_Store
+._*
+tmp/

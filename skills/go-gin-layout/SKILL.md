@@ -87,8 +87,8 @@ project/
 
 #### ServiceContext 的传递
 
-- `app` 先校验配置并初始化基础设施，然后调用 `svc.NewServiceContext(...)`，整个应用实例共享同一个 `*svc.ServiceContext`。连接的创建与关闭由 `app` 负责。
-- `NewServiceContext` 使用已有连接构造仓储，将仓储接口汇集到 `Repo`。应用入口在启动时创建共享的结构化日志器，`app` 将其传给 `NewServiceContext`，由 `ServiceContext.Logger` 提供给 Handler 和 Service。运行配置传给 `ServiceContext.Config`，供业务 Service 按需读取。记录请求日志时使用当前请求的上下文。登录限流等独立能力单独注入。运行配置只保留业务需要的参数。
+- `cmd` 加载并校验配置文件，用配置的日志级别创建共享日志器；`app` 接收已验证的 `config.Config`，初始化基础设施并调用 `svc.NewServiceContext(...)`，整个应用实例共享同一个 `*svc.ServiceContext`。连接的创建与关闭由 `app` 负责。
+- `NewServiceContext` 使用已有连接构造仓储，将仓储接口汇集到 `Repo`。`app` 将日志器、运行配置和数据库连接传给 `NewServiceContext`，由 `ServiceContext.Logger`、`ServiceContext.Config` 提供给 Handler 和 Service，`ServiceContext.Health` 提供给探针。记录请求日志时使用当前请求的上下文。登录限流等独立能力单独注入。Service 只读取自己负责的配置段。
 - `app` 将 `svcCtx` 显式传给 `router.New(svcCtx)`。注册路由时，Handler 构造函数接收该指针并返回持有它的 `gin.HandlerFunc`。
 - 每次请求到来时，Handler 调用对应业务用例的构造函数，例如 `userservice.NewProfileService(c.Request.Context(), svcCtx)`，创建当前请求的 Service。Service 使用请求上下文传递超时与取消，通过 `svcCtx.Repo` 调用仓储。共享依赖在启动时装配，请求状态留在各自的请求中。
 
@@ -99,6 +99,10 @@ internal/
 ├── router/api.go         # Gin 引擎和路由分组
 ├── router/user.go        # 用户模块路由（路由增多时按业务拆分）
 ├── router/order.go       # 订单模块路由
+├── router/health.go      # liveness/readiness/startup 探针
+├── middleware/requestid.go # 请求 ID 生成与透传
+├── middleware/accesslog.go # 访问日志、跳过健康检查
+├── middleware/recovery.go  # panic 恢复与结构化 500
 ├── middleware/auth.go    # 鉴权等 HTTP 中间件（按需）
 └── handler/
     ├── user/profile.go  # 用户资料接口及其请求、响应类型
@@ -120,10 +124,10 @@ internal/service/
 ```text
 internal/repository/
 ├── user.go          # t_user：表映射、接口和私有实现
-└── order.go         # t_order：表映射、接口和私有实现
+└── order.go         # t_order / t_order_item：表映射、接口和私有实现
 ```
 
-仓储包的划分与 Entity 对齐。关系型仓储按表分文件，文件名省略表名的 `t_` 前缀。详见 [Repository 仓储规范](#repository-仓储规范)。业务接口统一经 Handler 调用 Service；涉及存储访问时，由 Service 通过接口调用对应 Repository。没有存储访问的功能无需制造空 Repository；健康检查等运行状态接口可直接响应，不作为业务模块。
+仓储包的划分与 Entity 对齐。关系型仓储按表或紧密表组分文件，文件名省略表名的 `t_` 前缀。详见 [Repository 仓储规范](#repository-仓储规范)。业务接口统一经 Handler 调用 Service；涉及存储访问时，由 Service 通过接口调用对应 Repository。没有存储访问的功能无需制造空 Repository；健康检查等运行状态接口可直接响应，不作为业务模块。
 
 ### 实体、基础设施与测试
 
@@ -148,7 +152,7 @@ Handler 和 Service 从第一个业务模块开始使用业务子包。Entity �
 
 ### 业务实体的组织
 
-在单一业务域或模块彼此紧密相关时，`internal/entity/` 和 `internal/repository/` 各自使用一个包。Entity 按实体或值对象分文件，Repository 按存储对象分文件。示例中订单依赖用户，因此两个目录都采用单包。
+在单一业务域或模块彼此紧密相关时，`internal/entity/` 和 `internal/repository/` 各自使用一个包。Entity 按实体或值对象分文件，Repository 按表或紧密表组分文件。示例中订单依赖用户，因此两个目录都采用单包。
 
 ```text
 internal/entity/
@@ -188,7 +192,7 @@ Service 的输入输出使用业务类型或用例参数，不依赖 `dto` 或 H
 
 ## Repository 仓储规范
 
-Repository 与 [业务实体](#业务实体的组织) 按同一业务边界划分。关系型仓储按表分文件，表映射、实际需要的仓储接口、私有实现和构造函数放在一起。下面的 GORM 映射和构造函数规则适用于使用 GORM 的项目，不因应用目录规范自动引入 ORM。
+Repository 与 [业务实体](#业务实体的组织) 按同一业务边界划分。关系型仓储按表或紧密表组分文件，表映射、实际需要的仓储接口、私有实现和构造函数放在一起。下面的 GORM 映射和构造函数规则适用于使用 GORM 的项目，不因应用目录规范自动引入 ORM。
 
 ### 按表命名与文件内容
 
@@ -199,7 +203,7 @@ Repository 与 [业务实体](#业务实体的组织) 按同一业务边界划�
 | 数据库表 | `t_user` |
 | Go 文件 | `internal/repository/user.go`，省略 `t_` 前缀 |
 | 表名常量 | 在同文件定义，例如 `tableNameUser`，值为 `t_user` |
-| GORM 表映射 | `User`，`TableName()` 返回表名常量 |
+| GORM 表映射 | `userRow`（私有），`TableName()` 返回表名常量 |
 | 仓储接口 | `UserRepository`，与映射及实现同文件定义 |
 | 私有实现 | `userRepository`，封装已有数据库连接 |
 | 构造函数 | `NewUserRepository(db *gorm.DB) UserRepository`，接收已有连接并返回接口 |
@@ -210,7 +214,7 @@ Repository 与 [业务实体](#业务实体的组织) 按同一业务边界划�
 
 ### 实体、调用与事务边界
 
-- `entity.User` 是业务实体，`repository.User`（`internal/repository` 中的 `User`）是 GORM 表映射。仓储在内部转换，对业务层返回业务实体，不返回 GORM 表模型、数据库句柄或查询构建器。
+- `entity.User` 是业务实体，`userRow`（`internal/repository` 中的私有行结构）是 `t_user` 的 GORM 表映射。仓储在内部转换，对业务层返回业务实体，不返回 GORM 表模型、数据库句柄或查询构建器。
 - `app` 将已有连接和运行配置传给 `svc.NewServiceContext`，由该构造函数创建仓储并将其接口放入 `svcCtx.Repo`，同时把配置放入 `svcCtx.Config`。Service 通过这些接口执行存储操作，Handler 将业务请求交给 Service。
 - 用例专用查询和存储事务留在仓储层。Service 负责业务条件和流程，调用仓储提供的操作，不直接操作 GORM，也不在业务层拼接表查询或事务。
 
@@ -234,13 +238,14 @@ Repository 与 [业务实体](#业务实体的组织) 按同一业务边界划�
 
 - `*gin.Context` 留在 HTTP 层；向 Service 和 Repository 传递 `c.Request.Context()`，保持超时和取消信号。
 - 业务错误不包含 HTTP 状态码；在 Handler 或统一的 HTTP 错误处理中映射。沿用项目既有响应格式，不擅自把所有错误改成 HTTP 200。
-- 错误响应统一经 Handler 映射：4xx 属于预期结果，默认不写 `Error`，需要排查时可在 Handler 中加 `Debug` 日志；5xx 或未知错误必须写 `Error`，字段包含 `request_id`、method、path、status 和 error，不记录请求体、凭据或令牌。
-- 请求进入时生成或透传 `X-Request-ID`，校验其字符集与长度，并写入响应头和日志；同一请求的日志用该 ID 关联。中间件放 `internal/middleware/`。错误响应与日志字段在 Handler 中直接映射；多个 Handler 出现重复时再提取公共函数，不为少量接口预建错误处理包。完整规则见 [日志打印规范](references/logging.md)。
+- 错误响应统一经 Handler 映射：4xx 属于预期结果，默认不写 `Error`，需要排查时可在 Handler 中加 `Debug` 日志；5xx 或未知错误必须写 `Error`，字段包含 `request_id`、method、path、status 和 error，不记录请求体、凭据或令牌。panic 由 `internal/middleware/recovery.go` 捕获并记录结构化 500。
+- 请求进入时生成或透传 `X-Request-ID`，校验其字符集与长度，并写入响应头和日志；访问日志由 `internal/middleware/accesslog.go` 输出，包含 `request_id`、跳过健康检查、不记录 query。4xx 不写结构化 `Error`，但仍会出现在访问日志。错误响应与日志字段在 Handler 中直接映射；多个 Handler 出现重复时再提取公共函数，不为少量接口预建错误处理包。完整规则见 [日志打印规范](references/logging.md)。
 - 身份校验可放在中间件；资源归属、业务权限和状态流转由业务层判断，不能只依赖路由是否挂载鉴权中间件。
 - Service 决定业务流程与条件，用例专用的查询、跨表写入及存储事务封装在仓储层；Handler 不查库，Service 不持有或操作 GORM 事务对象，不为目录规范强行引入事务框架。
 - 连接初始化、启动失败清理、HTTP 优雅关闭和资源释放由入口与 `app` 协调；业务包不调用 `os.Exit`。
-- 启动日志在监听成功后输出：先 `net.Listen` 再 `Serve`，端口占用等错误直接返回；端到端测试以 `/healthz` 等就绪接口判断可用，不依赖固定等待时间。
+- 启动日志在监听成功后输出：先 `net.Listen` 再 `Serve`，端口占用等错误直接返回；端到端测试以 `/readyz` 等就绪接口判断可用，不依赖固定等待时间。
 - 配置代码放 `internal/config`；使用配置文件时，脱敏示例放 `configs/`。真实凭据通过项目既有配置机制注入，不写入示例或源码。
+- MySQL 的 `infra.mysql` 配置（host/port/user/password/database、驱动参数、连接池和 Ping 超时）由 `internal/config` 定义；DSN 由 `internal/infra/database` 使用驱动 API 构造。
 
 ## 可选基础设施：缓存与消息队列
 
@@ -262,7 +267,7 @@ internal/infra/
 
 ### 连接配置与生命周期
 
-- `internal/config` 定义并校验连接地址、认证信息、连接池及超时等配置；按所选产品补充配置项，存在配置文件时由 `configs` 保存脱敏示例。
+- `internal/config` 定义 `infra.mysql` 的 host/port/user/password/database、驱动参数、连接池和 Ping 超时；必填项校验、默认值和 DSN 构造在 `internal/infra/database` 初始化时完成；存在配置文件时由 `configs` 保存脱敏示例。
 - `internal/infra/cache` 初始化 Redis 等缓存客户端；`internal/infra/mq` 初始化所选消息队列的连接、生产者或消费者客户端。产品命名可用 `redis.go`、`rabbitmq.go` 或 `kafka.go`，不要求同时支持多种产品。
 - `internal/app` 根据配置创建并复用客户端，通过构造函数注入实际使用方；负责启动失败时清理已创建资源，并在退出时按依赖顺序关闭。不要在每次请求中重新连接。
 - “可选”表示项目可不引入该能力；引入后是启动必需依赖还是允许故障降级，应由业务要求明确，不因目录标为可选而自动忽略连接失败。
@@ -340,18 +345,18 @@ tests/
 
 ## 项目示例代码
 
-- 需要查看 HTTP 调用链、依赖装配和 MySQL 持久化示例时，阅读 [项目代码示例](references/examples.md)，按需查看 [可运行双模块项目](assets/gin-api/) 中对应层的源文件。示例使用 `ServiceContext` 传递共享日志器和仓储接口，`repository/user.go` 和 `repository/order.go` 演示 GORM 表映射与事务；MySQL 连接、建表脚本和 Docker Compose 也在资产中。关系型仓储的按表命名与 GORM 映射见 [Repository 仓储规范](#repository-仓储规范)。
-- 示例使用 `handler/user/profile.go`、`handler/order/create.go` 等具体功能文件，业务实体放在 `internal/entity/`，HTTP 类型留在 Handler，展示依赖注入。订单与用户属于同一紧密业务域，示例为保持最小化直接复用 `svcCtx.Repo.User`，未单独定义跨模块能力接口，此写法仅适合示例规模。模块边界独立或需要替换用户来源时，按 [多业务模块的组织](#多业务模块的组织) 在 `service/order` 中抽取消费方接口。示例默认使用 MySQL + GORM，启动前需按 README 准备数据库；缓存和消息队列仍按需引入，未包含 pytest 端到端测试。
+- 需要查看 HTTP 调用链、依赖装配和 MySQL 持久化示例时，阅读 [项目代码示例](references/examples.md)，按需查看 [可运行双模块项目](assets/gin-api/) 中对应层的源文件。示例使用 `ServiceContext` 传递共享日志器、运行配置和仓储接口，`repository/user.go` 和 `repository/order.go` 演示 GORM 表映射与事务；MySQL 连接、建表脚本和 Docker Compose 也在资产中。关系型仓储的按表命名与 GORM 映射见 [Repository 仓储规范](#repository-仓储规范)。
+- 示例使用 `handler/user/profile.go`、`handler/order/create.go` 等具体功能文件，业务实体放在 `internal/entity/`，HTTP 类型留在 Handler，展示依赖注入。订单与用户属于同一紧密业务域，示例为保持最小化直接复用 `svcCtx.Repo.User`，并由 order Handler 用 `errors.Is` 映射 `entity.ErrUserNotFound`，未单独定义跨模块能力接口，此写法仅适合示例规模。模块边界独立或需要替换用户来源时，按 [多业务模块的组织](#多业务模块的组织) 在 `service/order` 中抽取消费方接口。示例默认使用 MySQL + GORM，启动前需按 README 准备数据库；缓存和消息队列仍按需引入，未包含 pytest 端到端测试。
 - 需要连接 MySQL、Redis 或消息队列时，再阅读 [可选基础设施接入代码](references/infrastructure.md)。这些片段说明代码归属和装配，不是默认项目必须启用的能力。
 
 ## 审查清单
 
 审查目录结构和代码归属时，逐项核对并按“问题 → 依据 → 建议”输出；用户只要求审查时，不直接改代码。
 
-- **入口与装配**：`cmd` 只解析参数、创建日志器和启动；`app` 管理基础设施生命周期与优雅关闭；`svc` 只装配共享依赖，不含业务规则。
+- **入口与装配**：`cmd` 加载并校验配置、按配置创建日志器并启动；`app` 管理基础设施生命周期与优雅关闭；`svc` 只装配共享依赖，不含业务规则。
 - **依赖方向**：调用链为 `router → handler → service → repository`，`entity` 不反向依赖其他层，包之间无循环导入。
 - **HTTP 边界**：`*gin.Context` 不进入 Service/Repository；HTTP 请求响应类型留在 Handler；业务错误在 Handler 映射状态码，不泄漏内部细节。
-- **模块边界**：Handler 和 Service 按业务拆包；跨模块通过消费方定义的接口协作，不调用其他模块的 Handler；同一紧密业务域可复用仓储接口，但不要在 Handler 中判断其他领域的错误类型。
+- **模块边界**：Handler 和 Service 按业务拆包；跨模块通过消费方定义的接口协作，不调用其他模块的 Handler；同一紧密业务域可复用仓储接口并共享该域的实体错误，跨模块时通过消费方接口或错误翻译隔离，不要让 Handler 判断无关领域的错误。
 - **存储职责**：仓储接口按实际存储需求定义并与实现同包，无存储访问的模块不建空 Repository；表映射、用例查询和事务留在仓储层。
 - **命名与规模**：包名简短小写；文件名不重复包名；不建 `utils`、`common` 等杂物包；未使用的基础设施、`pkg`、`middleware` 不为“看起来完整”而创建。
 - **接口注释**：接口声明写清用途、参数、返回值、错误与事务/并发语义；项目内接口的实现方法必须使用 `// Method implements [Interface.Method].` 链接，接口重命名后同步更新。

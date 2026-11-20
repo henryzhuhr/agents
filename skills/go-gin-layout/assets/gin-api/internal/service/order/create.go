@@ -4,10 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"example.com/gin-layout/internal/entity"
 	"example.com/gin-layout/internal/svc"
+)
+
+const (
+	maxItems    = 100
+	maxSKU      = 64
+	maxQuantity = math.MaxInt32
 )
 
 var ErrInvalidOrder = errors.New("invalid order")
@@ -22,14 +29,14 @@ func NewCreateService(ctx context.Context, svcCtx *svc.ServiceContext) *CreateSe
 }
 
 func (s *CreateService) Create(userID uint64, items []entity.OrderItem) (entity.Order, error) {
-	if userID == 0 || len(items) == 0 {
+	if userID == 0 || len(items) == 0 || len(items) > maxItems {
 		return entity.Order{}, ErrInvalidOrder
 	}
 	// 使用独立切片，避免规范化输入时修改调用方的数据。
 	normalized := make([]entity.OrderItem, len(items))
 	for i, item := range items {
 		item.SKU = strings.TrimSpace(item.SKU)
-		if item.SKU == "" || item.Quantity <= 0 {
+		if item.SKU == "" || len([]rune(item.SKU)) > maxSKU || item.Quantity <= 0 || item.Quantity > maxQuantity {
 			return entity.Order{}, ErrInvalidOrder
 		}
 		normalized[i] = item

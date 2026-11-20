@@ -32,7 +32,7 @@
 
 | HTTP 状态 | 是否记录 | 级别 | 位置 |
 | --- | --- | --- | --- |
-| 4xx | 默认不记录；排查时可选 | `Debug` | Handler |
+| 4xx | 不写结构化 `Error`；访问日志仍记录 | `Debug`（可选） | Handler |
 | 5xx | 必须 | `Error` | Handler |
 | 2xx | 不记录业务日志 | — | 访问日志 |
 
@@ -73,7 +73,7 @@ default:
     c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 ```
 
-### 4xx（默认不记录）
+### 4xx（不写结构化 `Error`）
 
 ```go
 case errors.Is(err, orderservice.ErrInvalidOrder):
@@ -94,7 +94,9 @@ svcCtx.Logger.DebugContext(ctx, "request rejected",
 
 ## 访问日志与数据库日志
 
-- 当前访问日志由 `gin.Logger()` 输出，记录 method、path、status、耗时；它默认不包含 `request_id`。如需访问日志也关联请求，替换为自定义 formatter，不要重复输出业务错误。
+- 访问日志由 `internal/middleware/accesslog.go` 使用 `slog` 输出，包含 method、path、status、latency 和 `request_id`；它跳过 `/healthz`、`/livez`、`/readyz`、`/startupz`，也不记录 query string。
+- 4xx 不写结构化 `Error` 日志，但请求仍会出现在访问日志中；需要排查校验细节时，在 Handler 中临时增加 `Debug`。
+- panic 由 `internal/middleware/recovery.go` 捕获，使用 `Error` 记录 `request_id`、method、path、status、error 和堆栈，并返回统一的 JSON 500。
 - GORM 日志用于慢查询和数据库错误，不替代业务日志。`ErrRecordNotFound` 属于预期查询结果，已配置为不输出。
 - 不要在中间件、Service、Repository 中重复打印同一个错误。
 
@@ -109,9 +111,10 @@ svcCtx.Logger.DebugContext(ctx, "request rejected",
 
 ## 验证清单
 
-- 400 和 404 不产生 `Error` 日志。
-- 500 日志包含 `request_id`、method、path、status 和底层 `error`。
+- 400 和 404 不产生 `Error` 日志，但会出现在访问日志。
+- 500 日志包含 `request_id`、method、path、status 和底层 `error`；panic 500 由 Recovery 中间件记录。
 - 响应头带 `X-Request-ID`，合法入站值被原样透传。
+- 健康检查端点不出现在访问日志中。
 - 日志中没有请求体、令牌等敏感信息。
 - `log_level: debug` 仅在需要时开启，开启后可看到额外 4xx 排查日志（如果代码中已添加）。
 - 构建与静态检查通过：`gofmt -l .`、`go build ./...`、`go vet ./...`。

@@ -4,19 +4,19 @@
 
 | 路径 | 维护内容 |
 | --- | --- |
-| `internal/config` | 连接地址、认证、超时、连接池等配置的加载与校验 |
-| `internal/infra/database/mysql.go` | MySQL 连接池初始化 |
+| `internal/config` | 启动配置（HTTP、MySQL 连接参数、连接池、超时、日志级别）的加载与校验 |
+| `internal/infra/database/mysql.go` | MySQL 连接池、DSN 构造与健康检查 |
 | `internal/infra/cache/redis.go` | Redis 客户端初始化 |
 | `internal/infra/mq/rabbitmq.go` | AMQP 连接及 Channel 生命周期 |
 | `internal/repository/user_cache.go` | 用户缓存的 key、TTL、序列化 |
 | `internal/messaging/order_created.go` | 订单消息的队列、编码、发布 |
 | `internal/app` | 创建客户端、注入使用方、启动失败清理与退出关闭 |
 
-配置值由 `internal/config` 从项目既有配置来源加载；真实凭据不写入源码、示例或日志。示例中的超时和池大小用于展示配置位置，使用时改为项目配置项。
+配置值由 `internal/config` 从项目既有配置来源加载；真实凭据不写入源码、示例或日志。MySQL 的 host/port/user/password/database、连接池和 Ping 超时都在配置中定义，DSN 由 `internal/infra/database` 用驱动 API 构造，不手拼字符串。
 
 ## MySQL：GORM 连接池
 
-`internal/infra/database/mysql.go`。`dsn` 由配置层传入。GORM 默认在 `Open` 时自动 Ping；这里关闭自动 Ping，改用带超时的 `PingContext`，避免数据库不可用时启动长时间阻塞。相关 API 见 [GORM 文档](https://gorm.io/docs/)。表映射和 SQL 留在 Repository，业务层不导入 GORM。
+`internal/infra/database/mysql.go`。`config.Infra.MySQL` 提供 host/port/user/password/database/params 和连接池、Ping 超时；`OpenMySQL` 负责必填项校验、默认值补全和 DSN 构造，DSN 由 `go-sql-driver/mysql` 的 `Config.FormatDSN()` 生成。GORM 默认在 `Open` 时自动 Ping；这里关闭自动 Ping，改用带超时的 `PingContext`，避免数据库不可用时启动长时间阻塞。相关 API 见 [GORM 文档](https://gorm.io/docs/)。表映射和 SQL 留在 Repository，业务层不导入 GORM。
 
 ```go
 package database
@@ -28,10 +28,12 @@ import (
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+
+	"example.com/gin-layout/internal/config"
 )
 
-func OpenMySQL(ctx context.Context, dsn string) (*gorm.DB, error) {
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+func OpenMySQL(ctx context.Context, cfg config.MySQLConfig) (*gorm.DB, error) {
+	db, err := gorm.Open(mysql.Open(dsn(cfg)), &gorm.Config{
 		DisableAutomaticPing: true,
 	})
 	if err != nil {
@@ -41,10 +43,10 @@ func OpenMySQL(ctx context.Context, dsn string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get sql.DB: %w", err)
 	}
-	sqlDB.SetMaxOpenConns(20)
-	sqlDB.SetMaxIdleConns(5)
-	sqlDB.SetConnMaxLifetime(3 * time.Minute)
-	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	sqlDB.SetMaxOpenConns(cfg.Pool.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(cfg.Pool.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(time.Duration(cfg.Pool.ConnMaxLifetime))
+	pingCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.Pool.PingTimeout))
 	defer cancel()
 	if err := sqlDB.PingContext(pingCtx); err != nil {
 		_ = sqlDB.Close()
@@ -54,7 +56,9 @@ func OpenMySQL(ctx context.Context, dsn string) (*gorm.DB, error) {
 }
 ```
 
-`app` 将返回的 `*gorm.DB` 和运行配置传给 `svc.NewServiceContext`，由后者构造 Repository；Repository 使用 `WithContext` 传递请求上下文。连接池的关闭由 `app` 负责。
+`dsn(cfg)` 使用 `mysqldriver.Config{User, Passwd, Net: "tcp", Addr, DBName, Params}.FormatDSN()` 生成 DSN。
+
+`app` 将返回的 `*gorm.DB` 和运行配置传给 `svc.NewServiceContext`，由后者构造 Repository 和健康检查能力；Repository 使用 `WithContext` 传递请求上下文。连接池的关闭由 `app` 负责。
 
 ## Redis：连接与业务缓存分开
 

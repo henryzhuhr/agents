@@ -7,7 +7,8 @@
 ```text
 migrations/
 ├── 001_create_user_order_tables.sql
-└── 002_add_order_status.sql
+├── 002_seed_demo_user.sql   # 仅本地示例，生产排除
+└── 003_add_order_status.sql # 新增迁移从下一个序号继续
 ```
 
 - 文件放在项目根目录 `migrations/`，按文件名升序执行。
@@ -35,13 +36,15 @@ docker compose down -v
 docker compose up -d --wait
 ```
 
-已有数据库手动执行：
+已有数据库手动执行（以下命令在 Compose 容器内使用 3306；宿主机映射端口是 3307）：
 
 ```bash
-mysql -h 127.0.0.1 -P 3306 -uroot -p gin_layout < migrations/001_create_user_order_tables.sql
+docker compose exec -T mysql mysql -uroot -proot gin_layout < migrations/001_create_user_order_tables.sql
 # 仅本地示例；生产环境不要执行
-mysql -h 127.0.0.1 -P 3306 -uroot -p gin_layout < migrations/002_seed_demo_user.sql
+docker compose exec -T mysql mysql -uroot -proot gin_layout < migrations/002_seed_demo_user.sql
 ```
+
+对宿主机自装 MySQL 执行时，使用 `mysql -h 127.0.0.1 -P 3306 ...`，并确保 `configs/config.yaml` 的 `infra.mysql.port` 与之一致。
 
 ## 验证清单
 

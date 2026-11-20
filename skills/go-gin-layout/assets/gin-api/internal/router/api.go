@@ -1,8 +1,6 @@
 package router
 
 import (
-	"net/http"
-
 	"example.com/gin-layout/internal/middleware"
 	"example.com/gin-layout/internal/svc"
 
@@ -11,13 +9,16 @@ import (
 
 func New(svcCtx *svc.ServiceContext) (*gin.Engine, error) {
 	engine := gin.New()
-	engine.Use(middleware.RequestID(), gin.Logger(), gin.Recovery())
+	engine.Use(
+		middleware.RequestID(),
+		middleware.AccessLog(svcCtx.Logger),
+		middleware.Recovery(svcCtx.Logger),
+	)
 	if err := engine.SetTrustedProxies(nil); err != nil {
 		return nil, err
 	}
-	engine.GET("/healthz", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
+	registerHealthRoutes(engine, svcCtx)
+
 	baseAPI := engine.Group("/api/v1")
 	registerUserRoutes(baseAPI, svcCtx)
 	registerOrderRoutes(baseAPI, svcCtx)
