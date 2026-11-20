@@ -1,6 +1,6 @@
 # 可选基础设施接入示例
 
-本文展示 MySQL、Redis 和 RabbitMQ 接入时的代码归属。这些是独立的接入片段，不是完整可运行项目；默认的 `assets/gin-api` 仍使用内存存储，不包含这些客户端依赖，也不会连接外部服务。只复制实际需要的部分，再在目标项目添加对应依赖。片段已使用 `go-sql-driver/mysql v1.10.1`、`go-redis/v9 v9.23.0`、`amqp091-go v1.17.0` 编译验证，未连接实际服务。
+本文展示 MySQL、Redis 和 RabbitMQ 接入时的代码归属。MySQL 已随 [可运行示例](../assets/gin-api/) 落地并实际连接验证；Redis 和 RabbitMQ 仍是独立片段，不包含在默认示例中，也不会连接外部服务。只复制实际需要的部分，再在目标项目添加对应依赖。片段已使用 `gorm.io/gorm v1.31.1`、`gorm.io/driver/mysql v1.6.0`、`go-redis/v9 v9.23.0`、`amqp091-go v1.17.0` 编译验证，Redis 和 RabbitMQ 未连接实际服务。
 
 | 路径 | 维护内容 |
 | --- | --- |
@@ -8,47 +8,53 @@
 | `internal/infra/database/mysql.go` | MySQL 连接池初始化 |
 | `internal/infra/cache/redis.go` | Redis 客户端初始化 |
 | `internal/infra/mq/rabbitmq.go` | AMQP 连接及 Channel 生命周期 |
-| `internal/repository/user/cache.go` | 用户缓存的 key、TTL、序列化 |
+| `internal/repository/user_cache.go` | 用户缓存的 key、TTL、序列化 |
 | `internal/messaging/order_created.go` | 订单消息的队列、编码、发布 |
 | `internal/app` | 创建客户端、注入使用方、启动失败清理与退出关闭 |
 
 配置值由 `internal/config` 从项目既有配置来源加载；真实凭据不写入源码、示例或日志。示例中的超时和池大小用于展示配置位置，使用时改为项目配置项。
 
-## MySQL：初始化连接池
+## MySQL：GORM 连接池
 
-`internal/infra/database/mysql.go`。`dsn` 由配置层传入，包含项目所需的连接、读写超时等驱动参数；`sql.Open` 不等于建立连接，因此启动时还要执行 `PingContext`。相关行为见 [database/sql](https://pkg.go.dev/database/sql#Open) 和 [MySQL 驱动文档](https://github.com/go-sql-driver/mysql#usage)。
+`internal/infra/database/mysql.go`。`dsn` 由配置层传入。GORM 默认在 `Open` 时自动 Ping；这里关闭自动 Ping，改用带超时的 `PingContext`，避免数据库不可用时启动长时间阻塞。相关 API 见 [GORM 文档](https://gorm.io/docs/)。表映射和 SQL 留在 Repository，业务层不导入 GORM。
 
 ```go
 package database
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
 )
 
-func OpenMySQL(ctx context.Context, dsn string) (*sql.DB, error) {
-	db, err := sql.Open("mysql", dsn)
+func OpenMySQL(ctx context.Context, dsn string) (*gorm.DB, error) {
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+		DisableAutomaticPing: true,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("open mysql: %w", err)
 	}
-	db.SetMaxOpenConns(20)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(3 * time.Minute)
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("get sql.DB: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(20)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetConnMaxLifetime(3 * time.Minute)
 	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	if err := db.PingContext(pingCtx); err != nil {
-		_ = db.Close()
+	if err := sqlDB.PingContext(pingCtx); err != nil {
+		_ = sqlDB.Close()
 		return nil, fmt.Errorf("ping mysql: %w", err)
 	}
 	return db, nil
 }
 ```
 
-`app` 将返回的 `*sql.DB` 注入具体 Repository；SQL、行结构及业务实体转换留在 Repository，业务 Service 不导入数据库驱动。
+`app` 将返回的 `*gorm.DB` 和运行配置传给 `svc.NewServiceContext`，由后者构造 Repository；Repository 使用 `WithContext` 传递请求上下文。连接池的关闭由 `app` 负责。
 
 ## Redis：连接与业务缓存分开
 
@@ -79,10 +85,12 @@ func OpenRedis(ctx context.Context, options *redis.Options) (*redis.Client, erro
 }
 ```
 
-业务缓存放在 `internal/repository/user/cache.go`；下面的用户资料缓存复用示例项目的 `model.User`，明确区分“未命中”和“操作失败”。
+这里的缓存是用户资料存储适配器。Redis 登录限流的 `Allow` 能力应放在 `internal/infra/ratelimit/`，由 `app` 装配供 Service 调用，不放入 `Repo` 或登录 middleware；详见 [仓储与限流职责](../SKILL.md#redis-登录限流器的归属)。
+
+业务缓存放在 `internal/repository/user_cache.go`；下面的用户资料缓存复用示例项目的 `entity.User`，明确区分“未命中”和“操作失败”。
 
 ```go
-package user
+package repository
 
 import (
 	"context"
@@ -91,7 +99,7 @@ import (
 	"fmt"
 	"time"
 
-	"example.com/gin-layout/internal/model"
+	"example.com/gin-layout/internal/entity"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -104,22 +112,22 @@ func NewCache(client *redis.Client, ttl time.Duration) *Cache {
 	return &Cache{client: client, ttl: ttl}
 }
 
-func (c *Cache) Get(ctx context.Context, id uint64) (model.User, bool, error) {
+func (c *Cache) Get(ctx context.Context, id uint64) (entity.User, bool, error) {
 	raw, err := c.client.Get(ctx, fmt.Sprintf("user:profile:%d", id)).Bytes()
 	if errors.Is(err, redis.Nil) {
-		return model.User{}, false, nil
+		return entity.User{}, false, nil
 	}
 	if err != nil {
-		return model.User{}, false, err
+		return entity.User{}, false, err
 	}
-	var user model.User
+	var user entity.User
 	if err := json.Unmarshal(raw, &user); err != nil {
-		return model.User{}, false, err
+		return entity.User{}, false, err
 	}
 	return user, true, nil
 }
 
-func (c *Cache) Put(ctx context.Context, user model.User) error {
+func (c *Cache) Put(ctx context.Context, user entity.User) error {
 	raw, err := json.Marshal(user)
 	if err != nil {
 		return err
@@ -206,7 +214,7 @@ func (p *OrderPublisher) PublishCreated(ctx context.Context, orderID uint64) err
 }
 ```
 
-需要消息发布时，在 `internal/service/order` 定义消费方接口，并扩展该用例的构造函数保存它；这些改动未预先加入内存示例：
+需要消息发布时，在 `internal/service/order` 定义消费方接口，并扩展该用例的构造函数保存它；这些改动未预先加入示例：
 
 ```go
 type CreatedPublisher interface {

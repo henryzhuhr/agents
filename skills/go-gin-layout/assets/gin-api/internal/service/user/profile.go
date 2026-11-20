@@ -4,27 +4,24 @@ import (
 	"context"
 	"errors"
 
-	"example.com/gin-layout/internal/model"
+	"example.com/gin-layout/internal/entity"
+	"example.com/gin-layout/internal/svc"
 )
 
 var ErrInvalidID = errors.New("invalid user ID")
 
-// Repository 由消费方定义，Service 无需导入具体存储实现。
-type Repository interface {
-	GetByID(context.Context, uint64) (model.User, error)
+type ProfileService struct {
+	ctx    context.Context
+	svcCtx *svc.ServiceContext
 }
 
-type Service struct {
-	repo Repository
+func NewProfileService(ctx context.Context, svcCtx *svc.ServiceContext) *ProfileService {
+	return &ProfileService{ctx: ctx, svcCtx: svcCtx}
 }
 
-func New(repo Repository) *Service {
-	return &Service{repo: repo}
-}
-
-func (s *Service) Get(ctx context.Context, id uint64) (model.User, error) {
+func (s *ProfileService) Get(id uint64) (entity.User, error) {
 	if id == 0 {
-		return model.User{}, ErrInvalidID
+		return entity.User{}, ErrInvalidID
 	}
-	return s.repo.GetByID(ctx, id)
+	return s.svcCtx.Repo.User.GetByID(s.ctx, id)
 }

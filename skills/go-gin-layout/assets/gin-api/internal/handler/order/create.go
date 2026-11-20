@@ -6,17 +6,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"example.com/gin-layout/internal/model"
+	"example.com/gin-layout/internal/entity"
+	"example.com/gin-layout/internal/middleware"
 	orderservice "example.com/gin-layout/internal/service/order"
+	"example.com/gin-layout/internal/svc"
 )
-
-type Handler struct {
-	orders *orderservice.Service
-}
-
-func New(orders *orderservice.Service) *Handler {
-	return &Handler{orders: orders}
-}
 
 // 请求与响应类型留在对应功能文件，不与业务实体共用绑定标签。
 type createRequest struct {
@@ -40,31 +34,52 @@ type itemResponse struct {
 	Quantity int    `json:"quantity"`
 }
 
-func (h *Handler) Create(c *gin.Context) {
-	var request createRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order request"})
-		return
+// orderItems 把 HTTP 请求中的明细转成业务实体，保持 HTTP 类型不进入 Service。
+func (r createRequest) orderItems() []entity.OrderItem {
+	items := make([]entity.OrderItem, len(r.Items))
+	for i, item := range r.Items {
+		items[i] = entity.OrderItem{SKU: item.SKU, Quantity: item.Quantity}
 	}
-	items := make([]model.OrderItem, len(request.Items))
-	for i, item := range request.Items {
-		items[i] = model.OrderItem{SKU: item.SKU, Quantity: item.Quantity}
-	}
-	order, err := h.orders.Create(c.Request.Context(), request.UserID, items)
-	if err != nil {
-		switch {
-		case errors.Is(err, orderservice.ErrInvalidOrder):
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order"})
-		case errors.Is(err, model.ErrUserNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-		}
-		return
-	}
-	response := createResponse{ID: order.ID, UserID: order.UserID, Items: make([]itemResponse, len(order.Items))}
+	return items
+}
+
+// newCreateResponse 把业务实体转成 HTTP 响应。
+func newCreateResponse(order entity.Order) createResponse {
+	items := make([]itemResponse, len(order.Items))
 	for i, item := range order.Items {
-		response.Items[i] = itemResponse{SKU: item.SKU, Quantity: item.Quantity}
+		items[i] = itemResponse{SKU: item.SKU, Quantity: item.Quantity}
 	}
-	c.JSON(http.StatusCreated, response)
+	return createResponse{ID: order.ID, UserID: order.UserID, Items: items}
+}
+
+func NewCreateHandler(svcCtx *svc.ServiceContext) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+		var request createRequest
+		if err := c.ShouldBindJSON(&request); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order request"})
+			return
+		}
+		createService := orderservice.NewCreateService(ctx, svcCtx)
+		order, err := createService.Create(request.UserID, request.orderItems())
+		if err != nil {
+			switch {
+			case errors.Is(err, orderservice.ErrInvalidOrder):
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order"})
+			case errors.Is(err, entity.ErrUserNotFound):
+				c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+			default:
+				svcCtx.Logger.ErrorContext(ctx, "create order",
+					"request_id", middleware.RequestIDFromGin(c),
+					"method", c.Request.Method,
+					"path", c.FullPath(),
+					"status", http.StatusInternalServerError,
+					"error", err,
+				)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			}
+			return
+		}
+		c.JSON(http.StatusCreated, newCreateResponse(order))
+	}
 }

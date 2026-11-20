@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,24 +12,25 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
-		log.Printf("API stopped: %v", err)
+	cfg, err := config.Load()
+	if err != nil {
+		slog.New(slog.NewTextHandler(os.Stderr, nil)).Error("API stopped", "error", err)
+		os.Exit(1)
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.Level(cfg.LogLevel)}))
+	if err := run(cfg, logger); err != nil {
+		logger.Error("API stopped", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-	api, err := app.New(cfg)
+func run(cfg config.Config, logger *slog.Logger) error {
+	api, err := app.New(cfg, logger)
 	if err != nil {
 		return err
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("API listening on %s", cfg.HTTPAddr)
 	return api.Run(ctx)
 }

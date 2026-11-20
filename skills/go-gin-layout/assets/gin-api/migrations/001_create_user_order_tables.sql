@@ -1,0 +1,24 @@
+CREATE TABLE IF NOT EXISTS t_user (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    name VARCHAR(64) NOT NULL,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS t_order (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id BIGINT UNSIGNED NOT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    KEY idx_t_order_user_id (user_id),
+    CONSTRAINT fk_t_order_user FOREIGN KEY (user_id) REFERENCES t_user (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS t_order_item (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    order_id BIGINT UNSIGNED NOT NULL,
+    sku VARCHAR(64) NOT NULL,
+    quantity INT NOT NULL,
+    PRIMARY KEY (id),
+    KEY idx_t_order_item_order_id (order_id),
+    CONSTRAINT fk_t_order_item_order FOREIGN KEY (order_id) REFERENCES t_order (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
