@@ -16,7 +16,7 @@
 
 ## MySQL：GORM 连接池
 
-`internal/infra/database/mysql.go`。`config.Infra.MySQL` 提供 host/port/user/password/database/params 和连接池、Ping 超时；`OpenMySQL` 负责必填项校验、默认值补全和 DSN 构造，DSN 由 `go-sql-driver/mysql` 的 `Config.FormatDSN()` 生成。GORM 默认在 `Open` 时自动 Ping；这里关闭自动 Ping，改用带超时的 `PingContext`，避免数据库不可用时启动长时间阻塞。相关 API 见 [GORM 文档](https://gorm.io/docs/)。表映射和 SQL 留在 Repository，业务层不导入 GORM。
+`internal/infra/database/mysql.go`。`config.Infra.MySQL` 提供 host/port/user/password/database/params 和连接池、Ping 超时；`OpenMySQL` 负责必填项校验、默认值补全和 DSN 构造，DSN 由 `go-sql-driver/mysql` 的 `Config.FormatDSN()` 生成。示例使用 MySQL 8.4。关闭驱动的版本探测和 GORM 的自动 Ping，连接检查统一由带超时的 `PingContext` 执行。可运行示例的 GORM 日志启用 `ParameterizedQueries`，省略 SQL 绑定参数。相关 API 见 [GORM 文档](https://gorm.io/docs/)。表映射和 SQL 留在 Repository，业务层不导入 GORM。
 
 ```go
 package database
@@ -33,7 +33,10 @@ import (
 )
 
 func OpenMySQL(ctx context.Context, cfg config.MySQLConfig) (*gorm.DB, error) {
-	db, err := gorm.Open(mysql.Open(dsn(cfg)), &gorm.Config{
+	db, err := gorm.Open(mysql.New(mysql.Config{
+		DSN:                       dsn(cfg),
+		SkipInitializeWithVersion: true,
+	}), &gorm.Config{
 		DisableAutomaticPing: true,
 	})
 	if err != nil {

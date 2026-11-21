@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"example.com/gin-layout/internal/middleware"
 	"example.com/gin-layout/internal/svc"
 
 	"github.com/gin-gonic/gin"
@@ -22,7 +23,13 @@ func registerHealthRoutes(engine *gin.Engine, svcCtx *svc.ServiceContext) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 		defer cancel()
 		if err := svcCtx.Health.Ping(ctx); err != nil {
-			svcCtx.Logger.DebugContext(c.Request.Context(), "readiness check failed", "error", err)
+			svcCtx.Logger.ErrorContext(c.Request.Context(), "readiness check failed",
+				"request_id", middleware.RequestIDFromGin(c),
+				"method", c.Request.Method,
+				"path", c.FullPath(),
+				"status", http.StatusServiceUnavailable,
+				"error", err,
+			)
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not ready"})
 			return
 		}

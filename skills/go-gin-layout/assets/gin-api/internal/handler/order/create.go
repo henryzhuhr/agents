@@ -1,10 +1,13 @@
 package order
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 
 	"example.com/gin-layout/internal/entity"
 	"example.com/gin-layout/internal/middleware"
@@ -43,9 +46,9 @@ func (r createRequest) orderItems() []entity.OrderItem {
 	return items
 }
 
-// newCreateResponse 把业务实体转成 HTTP 响应。
 const maxRequestBodyBytes = 1 << 20
 
+// newCreateResponse 把业务实体转成 HTTP 响应。
 func newCreateResponse(order entity.Order) createResponse {
 	items := make([]itemResponse, len(order.Items))
 	for i, item := range order.Items {
@@ -57,14 +60,23 @@ func newCreateResponse(order entity.Order) createResponse {
 func NewCreateHandler(svcCtx *svc.ServiceContext) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		var request createRequest
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxRequestBodyBytes)
-		if err := c.ShouldBindJSON(&request); err != nil {
+		body, err := io.ReadAll(c.Request.Body)
+		if err != nil {
 			var maxBytesErr *http.MaxBytesError
 			if errors.As(err, &maxBytesErr) {
 				c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
 				return
 			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order request"})
+			return
+		}
+		var request createRequest
+		if err := json.Unmarshal(body, &request); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order request"})
+			return
+		}
+		if err := binding.Validator.ValidateStruct(&request); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order request"})
 			return
 		}

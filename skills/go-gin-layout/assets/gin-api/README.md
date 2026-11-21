@@ -79,9 +79,9 @@ DSN 由 `internal/infra/database` 根据上述字段构造，不在配置文件�
 ## 日志与错误响应
 
 - 每个响应带 `X-Request-ID`：合法入站值会透传，否则自动生成；访问日志和错误日志都用该 ID 关联请求。
-- 访问日志由 `internal/middleware/accesslog.go` 输出，包含 method/path/status/latency/request_id，跳过健康检查，不记录 query。
+- 访问日志由 `internal/middleware/accesslog.go` 输出，包含 method/path/status/latency/request_id，跳过健康检查，不记录 query。带尾斜杠但未注册的路径按 404 处理，也经过请求 ID 和访问日志中间件。
 - 400/404 等预期错误不写结构化 `Error` 日志，但访问日志仍会记录；需要排查时在 Handler 中临时增加 `Debug` 日志。
-- 500/未知错误以 `Error` 记录 `request_id`、method、path、status、error；panic 由 `internal/middleware/recovery.go` 捕获并返回统一 JSON 500。
+- 500/未知错误和就绪检查失败（503）以 `Error` 记录 `request_id`、method、path、status、error；panic 由 `internal/middleware/recovery.go` 捕获并返回统一 JSON 500。
 - 错误响应在 Handler 中直接映射；多个 Handler 重复相同日志字段时再提取公共函数。
 - 完整规范见 [日志打印规范](../../references/logging.md)。
 

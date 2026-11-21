@@ -40,10 +40,15 @@ func OpenMySQL(ctx context.Context, cfg config.MySQLConfig) (*gorm.DB, error) {
 			SlowThreshold:             slowQueryThreshold,
 			LogLevel:                  logger.Warn,
 			IgnoreRecordNotFoundError: true,
+			ParameterizedQueries:      true,
 			Colorful:                  false,
 		},
 	)
-	db, err := gorm.Open(mysql.Open(dsn(cfg)), &gorm.Config{
+	// 示例使用 MySQL 8.4，跳过驱动的无超时版本探测，由 PingContext 建立连接。
+	db, err := gorm.Open(mysql.New(mysql.Config{
+		DSN:                       dsn(cfg),
+		SkipInitializeWithVersion: true,
+	}), &gorm.Config{
 		DisableAutomaticPing: true,
 		Logger:               gormLogger,
 	})

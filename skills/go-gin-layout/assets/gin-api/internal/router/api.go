@@ -9,6 +9,7 @@ import (
 
 func New(svcCtx *svc.ServiceContext) (*gin.Engine, error) {
 	engine := gin.New()
+	engine.RedirectTrailingSlash = false
 	engine.Use(
 		middleware.RequestID(),
 		middleware.AccessLog(svcCtx.Logger),

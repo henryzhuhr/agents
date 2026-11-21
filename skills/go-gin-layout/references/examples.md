@@ -66,7 +66,7 @@ cp configs/config.example.yaml configs/config.yaml
 go run ./cmd/api
 ```
 
-默认读取 `configs/config.yaml`，可用 `CONFIG_FILE` 指定其他路径。默认监听 `127.0.0.1:8080`。启动时会 Ping 数据库，连接失败则进程退出；按 Ctrl+C 停止时会等待在途 HTTP 请求结束，最多等待 5 秒，然后关闭数据库连接。
+默认读取 `configs/config.yaml`，可用 `CONFIG_FILE` 指定其他路径。默认监听 `127.0.0.1:8080`。启动时会 Ping 数据库，连接失败则进程退出；按 Ctrl+C 停止时会等待在途 HTTP 请求结束，最多等待 15 秒，然后关闭数据库连接。
 
 在另一个终端执行：
 
