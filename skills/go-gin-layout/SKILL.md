@@ -22,7 +22,7 @@ description: 规划、创建和审查 Go/Gin 后端项目目录结构，明确�
 
 依赖隔离借鉴 Clean Architecture 的思想，但仅有 `handler → service → repository` 的目录或调用链并不等于完整实现整洁架构；应检查实际源码依赖和业务边界。`infra`、`dto` 等名称同样是本模板的组织约定，不应描述为 Go 社区统一标准。
 
-新项目按层组织。Handler 和 Service 在层内按业务模块拆包，Entity 和 Repository 按同一业务边界一起拆包。已有项目的调整遵循其现行约定和用户要求。需要借鉴成熟项目时，阅读其实际入口、装配和模块代码，说明适用条件，不以目录相似作为生产验证的证据。
+新项目按层组织。Handler 和 Service 在层内按业务模块拆包，Model 和 Repository 按同一业务边界一起拆包。已有项目的调整遵循其现行约定和用户要求。需要借鉴成熟项目时，阅读其实际入口、装配和模块代码，说明适用条件，不以目录相似作为生产验证的证据。
 
 ## 使用流程
 
@@ -34,7 +34,7 @@ description: 规划、创建和审查 Go/Gin 后端项目目录结构，明确�
 
 ## 默认目录结构
 
-默认按层组织。Handler 和 Service 从第一个模块开始按业务拆包。单一业务域中，Entity 和 Repository 各用一个包。下面先展示顶层用途，再分段展开；各段属于同一个项目，`user` 和 `order` 仅为业务示例，功能文件按实际需求创建。
+默认按层组织。Handler 和 Service 从第一个模块开始按业务拆包。单一业务域中，Model 和 Repository 各用一个包。下面先展示顶层用途，再分段展开；各段属于同一个项目，`user` 和 `order` 仅为业务示例，功能文件按实际需求创建。
 
 ### 顶层概览
 
@@ -50,7 +50,7 @@ project/
 │   ├── handler/      # HTTP 接口处理
 │   ├── service/      # 业务用例与规则
 │   ├── repository/   # 存储访问实现
-│   ├── entity/       # 业务实体与值对象
+│   ├── model/       # 业务模型（实体与值对象）
 │   └── infra/        # 按需：外部连接、限流等基础能力
 ├── configs/          # 按需：使用配置文件时放脱敏示例
 ├── api/              # 按需：OpenAPI 等接口契约
@@ -127,7 +127,7 @@ internal/repository/
 └── order.go         # t_order / t_order_item：表映射、接口和私有实现
 ```
 
-仓储包的划分与 Entity 对齐。关系型仓储按表或紧密表组分文件，文件名省略表名的 `t_` 前缀。详见 [Repository 仓储规范](#repository-仓储规范)。业务接口统一经 Handler 调用 Service；涉及存储访问时，由 Service 通过接口调用对应 Repository。没有存储访问的功能无需制造空 Repository；健康检查等运行状态接口可直接响应，不作为业务模块。
+仓储包的划分与 Model 对齐。关系型仓储按表或紧密表组分文件，文件名省略表名的 `t_` 前缀。详见 [Repository 仓储规范](#repository-仓储规范)。业务接口统一经 Handler 调用 Service；涉及存储访问时，由 Service 通过接口调用对应 Repository。没有存储访问的功能无需制造空 Repository；健康检查等运行状态接口可直接响应，不作为业务模块。
 
 ### 实体、基础设施与测试
 
@@ -135,13 +135,13 @@ internal/repository/
 
 | 用途 | 目录 | 展开位置 |
 | --- | --- | --- |
-| 业务实体与值对象 | `internal/entity/` | [业务实体的组织](#业务实体的组织) |
+| 业务模型（实体与值对象） | `internal/model/` | [业务模型的组织](#业务模型的组织) |
 | 数据库、缓存与消息队列连接 | `internal/infra/` | [可选基础设施](#可选基础设施缓存与消息队列) |
 | pytest 通过 HTTP 测试真实服务 | `tests/e2e/` | [端到端接口测试的目录与组织](#端到端接口测试的目录与组织) |
 
 ## 多业务模块的组织
 
-Handler 和 Service 从第一个业务模块开始使用业务子包。Entity 和 Repository 采用下文的统一划分规则。
+Handler 和 Service 从第一个业务模块开始使用业务子包。Model 和 Repository 采用下文的统一划分规则。
 
 - **Handler 和 Service 按业务拆包**。用户模块使用 `handler/user/` 和 `service/user/`，订单等其他模块在这两层建立对应子包。存储访问由 Service 调用仓储接口。
 - **文件按职责命名**：Handler 和 Service 子包内按具体功能或用例命名文件，如 `handler/user/profile.go`、`handler/order/create.go`；目录已表达所属层和模块，文件名不再重复包名，例如用 `app/api.go`、`router/api.go`，而不是 `app/app.go`、`router/router.go`。相关接口可按职责聚合，不要求每个 HTTP 路由各建一个文件，两层的文件也不必机械一一对应。
@@ -150,20 +150,20 @@ Handler 和 Service 从第一个业务模块开始使用业务子包。Entity �
 - **模块间通过能力接口协作**：订单用例需要查询用户状态时，在 `service/order` 内定义它消费的小接口（如 `UserReader`），由 `app` 装配进 `ServiceContext` 或构造参数；不调用其他模块的 Handler，不引入循环导入。不要与仓储接口混用：仓储接口描述存储能力，放在 repository 包并汇入 `svcCtx.Repo`；跨模块服务能力定义在消费方。
 - **统一装配和路由**：`app` 装配各模块，`router` 注册模块路由；`config`、`middleware` 和 `infra` 等公共基础能力按用途复用，不为每个模块重复维护连接。
 
-### 业务实体的组织
+### 业务模型的组织
 
-在单一业务域或模块彼此紧密相关时，`internal/entity/` 和 `internal/repository/` 各自使用一个包。Entity 按实体或值对象分文件，Repository 按表或紧密表组分文件。示例中订单依赖用户，因此两个目录都采用单包。
+在单一业务域或模块彼此紧密相关时，`internal/model/` 和 `internal/repository/` 各自使用一个包。Model 按实体或值对象分文件，Repository 按表或紧密表组分文件。示例中订单依赖用户，因此两个目录都采用单包。
 
 ```text
-internal/entity/
+internal/model/
 ├── user.go          # 用户实体
 ├── order.go         # 订单实体
 └── order_item.go    # 订单明细实体
 ```
 
-- 存在多个职责独立、边界清晰的业务模块时，Entity 和 Repository 按相同的模块名一起拆包。例如账户与计费独立时，使用 `entity/account/` 对应 `repository/account/`，`entity/billing/` 对应 `repository/billing/`。仓储子包按实际存储需求创建。
+- 存在多个职责独立、边界清晰的业务模块时，Model 和 Repository 按相同的模块名一起拆包。例如账户与计费独立时，使用 `model/account/` 对应 `repository/account/`，`model/billing/` 对应 `repository/billing/`。仓储子包按实际存储需求创建。
 - 文件名表达实体或值对象，不按 `create.go`、`query.go` 等接口动作拆分；同一实体的查询、创建和修改共用其业务定义，HTTP 请求与响应仍留在接口边界。
-- `entity` 不反向依赖 Handler、Service、Repository 或 `infra`。数据库专用行结构与 ORM 映射仍优先留在 Repository 中，不因拆包将协议或存储细节搬入业务模型。
+- `model` 不反向依赖 Handler、Service、Repository 或 `infra`。数据库专用行结构与 ORM 映射仍优先留在 Repository 中，不因拆包将协议或存储细节搬入业务模型。
 
 ## 分层职责与依赖
 
@@ -174,7 +174,7 @@ internal/entity/
 - `handler` 绑定并校验 HTTP 输入，调用 Service，将业务错误映射为状态码和响应。HTTP DTO 留在边界，不将 Gin 对象传入业务层。
 - `service` 承载业务规则和用例编排，通过 `UserRepository` 等接口调用仓储。可导入仓储接口所属包，但不使用 GORM 表模型、`*gorm.DB` 或仓储私有实现；业务判断由 Service 负责，用例专用查询和存储事务实现留在仓储层。
 - `repository` 定义仓储接口并提供私有实现，封装查询、持久化与存储事务，完成表映射和业务实体转换；不接收 `*gin.Context`、不写 HTTP 响应、不反向调用 Service。
-- `entity` 放业务实体和值对象。HTTP 请求响应留在接口边界，数据库专用行结构和 ORM 映射放在 Repository 包内，仓储对业务层返回业务实体。
+- `model` 放业务模型，包括实体和值对象。HTTP 请求和响应类型留在 Handler，Protobuf 契约和生成代码放在版本化的 `api/`，数据库行结构和 ORM 映射留在 Repository。仓储向业务层返回业务模型。
 - `infra` 维护实际使用的数据库、缓存、消息队列客户端初始化，以及登录限流等基础能力；由 `app` 管理其生命周期，不依赖 Handler、Router 或业务 Service，不承载业务用例编排。
 
 Service 的输入输出使用业务类型或用例参数，不依赖 `dto` 或 Handler 包中的 HTTP 协议结构。Handler 负责 DTO 与业务参数的转换。跨模块协作通过明确的 Service 能力或小接口完成，不让 Handler 相互调用。
@@ -192,7 +192,7 @@ Service 的输入输出使用业务类型或用例参数，不依赖 `dto` 或 H
 
 ## Repository 仓储规范
 
-Repository 与 [业务实体](#业务实体的组织) 按同一业务边界划分。关系型仓储按表或紧密表组分文件，表映射、实际需要的仓储接口、私有实现和构造函数放在一起。下面的 GORM 映射和构造函数规则适用于使用 GORM 的项目，不因应用目录规范自动引入 ORM。
+Repository 与 [业务实体](#业务模型的组织) 按同一业务边界划分。关系型仓储按表或紧密表组分文件，表映射、实际需要的仓储接口、私有实现和构造函数放在一起。下面的 GORM 映射和构造函数规则适用于使用 GORM 的项目，不因应用目录规范自动引入 ORM。
 
 ### 按表命名与文件内容
 
@@ -214,7 +214,7 @@ Repository 与 [业务实体](#业务实体的组织) 按同一业务边界划�
 
 ### 实体、调用与事务边界
 
-- `entity.User` 是业务实体，`userRow`（`internal/repository` 中的私有行结构）是 `t_user` 的 GORM 表映射。仓储在内部转换，对业务层返回业务实体，不返回 GORM 表模型、数据库句柄或查询构建器。
+- `model.User` 是业务实体，`userRow`（`internal/repository` 中的私有行结构）是 `t_user` 的 GORM 表映射。仓储在内部转换，对业务层返回业务实体，不返回 GORM 表模型、数据库句柄或查询构建器。
 - `app` 将已有连接和运行配置传给 `svc.NewServiceContext`，由该构造函数创建仓储并将其接口放入 `svcCtx.Repo`，同时把配置放入 `svcCtx.Config`。Service 通过这些接口执行存储操作，Handler 将业务请求交给 Service。
 - 用例专用查询和存储事务留在仓储层。Service 负责业务条件和流程，调用仓储提供的操作，不直接操作 GORM，也不在业务层拼接表查询或事务。
 
@@ -293,7 +293,7 @@ Redis 登录限流的 `Allow` 能力按 [仓储规范中的职责划分](#redis-
 - Go 包名采用简短的小写词，避免下划线和无意义复数；文件使用 `snake_case.go`。
 - 不默认创建 `utils`、`common`、`base` 等杂物包；共享能力按用途命名，并放在最小合理作用域。
 - 应用私有代码优先放 `internal`。只有确实需要被其他模块导入且准备维护其 API 时，才建立对外包；不默认创建 `pkg`。
-- 已有项目采用 `internal/user/{handler,service,repository}/` 等按业务聚合的布局时，先遵循其现行约定；用户要求统一布局后再规划迁移。新项目使用上述分层规则，Entity 与 Repository 随业务边界一起调整。
+- 已有项目采用 `internal/user/{handler,service,repository}/` 等按业务聚合的布局时，先遵循其现行约定；用户要求统一布局后再规划迁移。新项目使用上述分层规则，Model 与 Repository 随业务边界一起调整。
 - 同包内拆文件只影响代码组织。进一步拆包时，按职责和依赖关系划分，避免循环导入。
 - 单一服务默认一个 Go module；多入口可以新增 `cmd/worker` 等目录。只有独立发布或依赖隔离确有需求时才拆多 module，不因存在多个入口就引入 `go.work`。
 
@@ -346,7 +346,7 @@ tests/
 ## 项目示例代码
 
 - 需要查看 HTTP 调用链、依赖装配和 MySQL 持久化示例时，阅读 [项目代码示例](references/examples.md)，按需查看 [可运行双模块项目](assets/gin-api/) 中对应层的源文件。示例使用 `ServiceContext` 传递共享日志器、运行配置和仓储接口，`repository/user.go` 和 `repository/order.go` 演示 GORM 表映射与事务；MySQL 连接、建表脚本和 Docker Compose 也在资产中。关系型仓储的按表命名与 GORM 映射见 [Repository 仓储规范](#repository-仓储规范)。
-- 示例使用 `handler/user/profile.go`、`handler/order/create.go` 等具体功能文件，业务实体放在 `internal/entity/`，HTTP 类型留在 Handler，展示依赖注入。订单与用户属于同一紧密业务域，示例为保持最小化直接复用 `svcCtx.Repo.User`，并由 order Handler 用 `errors.Is` 映射 `entity.ErrUserNotFound`，未单独定义跨模块能力接口，此写法仅适合示例规模。模块边界独立或需要替换用户来源时，按 [多业务模块的组织](#多业务模块的组织) 在 `service/order` 中抽取消费方接口。示例默认使用 MySQL + GORM，启动前需按 README 准备数据库；缓存和消息队列仍按需引入，未包含 pytest 端到端测试。
+- 示例使用 `handler/user/profile.go`、`handler/order/create.go` 等具体功能文件，业务实体放在 `internal/model/`，HTTP 类型留在 Handler，展示依赖注入。订单与用户属于同一紧密业务域，示例为保持最小化直接复用 `svcCtx.Repo.User`，并由 order Handler 用 `errors.Is` 映射 `model.ErrUserNotFound`，未单独定义跨模块能力接口，此写法仅适合示例规模。模块边界独立或需要替换用户来源时，按 [多业务模块的组织](#多业务模块的组织) 在 `service/order` 中抽取消费方接口。示例默认使用 MySQL + GORM，启动前需按 README 准备数据库；缓存和消息队列仍按需引入，未包含 pytest 端到端测试。
 - 需要连接 MySQL、Redis 或消息队列时，再阅读 [可选基础设施接入代码](references/infrastructure.md)。这些片段说明代码归属和装配，不是默认项目必须启用的能力。
 
 ## 审查清单
@@ -354,7 +354,7 @@ tests/
 审查目录结构和代码归属时，逐项核对并按“问题 → 依据 → 建议”输出；用户只要求审查时，不直接改代码。
 
 - **入口与装配**：`cmd` 加载并校验配置、按配置创建日志器并启动；`app` 管理基础设施生命周期与优雅关闭；`svc` 只装配共享依赖，不含业务规则。
-- **依赖方向**：调用链为 `router → handler → service → repository`，`entity` 不反向依赖其他层，包之间无循环导入。
+- **依赖方向**：调用链为 `router → handler → service → repository`，`model` 不反向依赖其他层，包之间无循环导入。
 - **HTTP 边界**：`*gin.Context` 不进入 Service/Repository；HTTP 请求响应类型留在 Handler；业务错误在 Handler 映射状态码，不泄漏内部细节。
 - **模块边界**：Handler 和 Service 按业务拆包；跨模块通过消费方定义的接口协作，不调用其他模块的 Handler；同一紧密业务域可复用仓储接口并共享该域的实体错误，跨模块时通过消费方接口或错误翻译隔离，不要让 Handler 判断无关领域的错误。
 - **存储职责**：仓储接口按实际存储需求定义并与实现同包，无存储访问的模块不建空 Repository；表映射、用例查询和事务留在仓储层。

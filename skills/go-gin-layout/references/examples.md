@@ -2,7 +2,7 @@
 
 ## 可直接运行的双模块 API
 
-完整代码位于 [assets/gin-api](../assets/gin-api/)，使用 Go 1.25 或更高版本、Gin v1.12.0、GORM v1.31.1 和 MySQL。示例展示用户查询与订单创建。Handler 和 Service 按业务拆包。用户与订单关系紧密，Entity 和 Repository 各用一个包。
+完整代码位于 [assets/gin-api](../assets/gin-api/)，使用 Go 1.25 或更高版本、Gin v1.12.0、GORM v1.31.1 和 MySQL。示例展示用户查询与订单创建。Handler 和 Service 按业务拆包。用户与订单关系紧密，Model 和 Repository 各用一个包。
 
 ```text
 gin-api/
@@ -31,7 +31,7 @@ gin-api/
 │   ├── repository/
 │   │   ├── user.go
 │   │   └── order.go
-│   └── entity/
+│   └── model/
 │       ├── user.go
 │       ├── order.go
 │       └── order_item.go
@@ -123,4 +123,4 @@ curl -i -X POST http://127.0.0.1:8080/api/v1/orders \
 
 MySQL 已包含在示例中；Redis、消息队列和登录限流等能力仍按实际需求引入，接入位置见 [基础设施接入代码](infrastructure.md)。
 
-复用时按目标项目调整 module 路径和 import，仅取实际需要的模块。Entity 与 Repository 按相同业务边界划分。接入关系型数据库时，按仓储规范组织表映射和存储实现。具体功能文件与可选基础设施按实际需求选择。
+复用时按目标项目调整 module 路径和 import，仅取实际需要的模块。Model 与 Repository 按相同业务边界划分。接入关系型数据库时，按仓储规范组织表映射和存储实现。具体功能文件与可选基础设施按实际需求选择。

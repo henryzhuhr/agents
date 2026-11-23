@@ -7,7 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"example.com/gin-layout/internal/entity"
+	"example.com/gin-layout/internal/model"
 )
 
 const tableNameUser = "t_user"
@@ -22,11 +22,11 @@ func (userRow) TableName() string { return tableNameUser }
 
 // UserRepository 描述用户存储能力。
 type UserRepository interface {
-	// GetByID 返回用户实体副本，未找到时返回 entity.ErrUserNotFound。
+	// GetByID 返回用户实体副本，未找到时返回 model.ErrUserNotFound。
 	//
 	// 返回实体值而不是指针：查询结果要么是实体、要么是错误，调用方无需判空；
 	// User 只含值字段，复制成本很低，返回副本也不会暴露仓储内部状态。
-	GetByID(ctx context.Context, id uint64) (entity.User, error)
+	GetByID(ctx context.Context, id uint64) (model.User, error)
 }
 
 type userRepository struct {
@@ -39,14 +39,14 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 }
 
 // GetByID implements [UserRepository.GetByID].
-func (r *userRepository) GetByID(ctx context.Context, id uint64) (entity.User, error) {
+func (r *userRepository) GetByID(ctx context.Context, id uint64) (model.User, error) {
 	var row userRow
 	err := r.db.WithContext(ctx).Where("id = ?", id).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return entity.User{}, entity.ErrUserNotFound
+		return model.User{}, model.ErrUserNotFound
 	}
 	if err != nil {
-		return entity.User{}, fmt.Errorf("query user %d: %w", id, err)
+		return model.User{}, fmt.Errorf("query user %d: %w", id, err)
 	}
-	return entity.User{ID: row.ID, Name: row.Name}, nil
+	return model.User{ID: row.ID, Name: row.Name}, nil
 }

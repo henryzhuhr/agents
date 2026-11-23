@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"example.com/gin-layout/internal/entity"
+	"example.com/gin-layout/internal/model"
 	"example.com/gin-layout/internal/svc"
 )
 
@@ -19,9 +19,9 @@ func NewProfileService(ctx context.Context, svcCtx *svc.ServiceContext) *Profile
 	return &ProfileService{ctx: ctx, svcCtx: svcCtx}
 }
 
-func (s *ProfileService) Get(id uint64) (entity.User, error) {
+func (s *ProfileService) Get(id uint64) (model.User, error) {
 	if id == 0 {
-		return entity.User{}, ErrInvalidID
+		return model.User{}, ErrInvalidID
 	}
 	return s.svcCtx.Repo.User.GetByID(s.ctx, id)
 }

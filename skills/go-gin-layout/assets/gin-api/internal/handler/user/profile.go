@@ -7,8 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"example.com/gin-layout/internal/entity"
 	"example.com/gin-layout/internal/middleware"
+	"example.com/gin-layout/internal/model"
 	userservice "example.com/gin-layout/internal/service/user"
 	"example.com/gin-layout/internal/svc"
 )
@@ -33,7 +33,7 @@ func NewProfileHandler(svcCtx *svc.ServiceContext) gin.HandlerFunc {
 			switch {
 			case errors.Is(err, userservice.ErrInvalidID):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user ID"})
-			case errors.Is(err, entity.ErrUserNotFound):
+			case errors.Is(err, model.ErrUserNotFound):
 				c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 			default:
 				svcCtx.Logger.ErrorContext(ctx, "load user profile",

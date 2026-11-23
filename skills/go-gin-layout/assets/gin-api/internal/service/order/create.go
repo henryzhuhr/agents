@@ -7,7 +7,7 @@ import (
 	"math"
 	"strings"
 
-	"example.com/gin-layout/internal/entity"
+	"example.com/gin-layout/internal/model"
 	"example.com/gin-layout/internal/svc"
 )
 
@@ -28,21 +28,21 @@ func NewCreateService(ctx context.Context, svcCtx *svc.ServiceContext) *CreateSe
 	return &CreateService{ctx: ctx, svcCtx: svcCtx}
 }
 
-func (s *CreateService) Create(userID uint64, items []entity.OrderItem) (entity.Order, error) {
+func (s *CreateService) Create(userID uint64, items []model.OrderItem) (model.Order, error) {
 	if userID == 0 || len(items) == 0 || len(items) > maxItems {
-		return entity.Order{}, ErrInvalidOrder
+		return model.Order{}, ErrInvalidOrder
 	}
 	// 使用独立切片，避免规范化输入时修改调用方的数据。
-	normalized := make([]entity.OrderItem, len(items))
+	normalized := make([]model.OrderItem, len(items))
 	for i, item := range items {
 		item.SKU = strings.TrimSpace(item.SKU)
 		if item.SKU == "" || len([]rune(item.SKU)) > maxSKU || item.Quantity <= 0 || item.Quantity > maxQuantity {
-			return entity.Order{}, ErrInvalidOrder
+			return model.Order{}, ErrInvalidOrder
 		}
 		normalized[i] = item
 	}
 	if _, err := s.svcCtx.Repo.User.GetByID(s.ctx, userID); err != nil {
-		return entity.Order{}, fmt.Errorf("read ordering user: %w", err)
+		return model.Order{}, fmt.Errorf("read ordering user: %w", err)
 	}
-	return s.svcCtx.Repo.Order.Create(s.ctx, entity.Order{UserID: userID, Items: normalized})
+	return s.svcCtx.Repo.Order.Create(s.ctx, model.Order{UserID: userID, Items: normalized})
 }

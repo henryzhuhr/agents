@@ -19,7 +19,7 @@ internal/middleware/accesslog.go # 访问日志
 internal/middleware/recovery.go  # panic 恢复与结构化 500
 internal/service/                # 业务用例
 internal/repository/             # GORM 表映射、仓储接口与实现
-internal/entity/                 # 业务实体
+internal/model/                 # 业务模型
 internal/svc/servicecontext.go   # 共享依赖装配
 configs/config.example.yaml      # YAML 配置示例
 migrations/                      # 建表与本地示例数据

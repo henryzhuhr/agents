@@ -1,4 +1,4 @@
-package entity
+package model
 
 type OrderItem struct {
 	SKU      string

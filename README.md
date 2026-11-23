@@ -12,7 +12,7 @@ npx skills add henryzhuhr/agents --list
 
 ### 🐹 go-gin-layout
 
-[`SKILL.md`](./skills/go-gin-layout/SKILL.md)：规划、创建和审查 Go/Gin 后端目录结构，按层组织，Entity 与 Repository 按同一业务边界划分，明确可选基础设施与 pytest 端到端 HTTP 测试的组织，附项目代码示例。
+[`SKILL.md`](./skills/go-gin-layout/SKILL.md)：规划、创建和审查 Go/Gin 后端目录结构，按层组织，Model 与 Repository 按同一业务边界划分，明确可选基础设施与 pytest 端到端 HTTP 测试的组织，附项目代码示例。
 
 ```bash
 npx skills add henryzhuhr/agents --copy --agent claude-code -y --skill go-gin-layout

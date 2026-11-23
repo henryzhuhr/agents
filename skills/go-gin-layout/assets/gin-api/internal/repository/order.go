@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"example.com/gin-layout/internal/entity"
+	"example.com/gin-layout/internal/model"
 )
 
 const (
@@ -34,7 +34,7 @@ func (orderItemRow) TableName() string { return tableNameOrderItem }
 type OrderRepository interface {
 	// Create 保存订单并返回持久化后的副本；订单与明细在同一事务中写入，
 	// 返回值的 Items 与仓储内部切片不共享底层数组。
-	Create(ctx context.Context, order entity.Order) (entity.Order, error)
+	Create(ctx context.Context, order model.Order) (model.Order, error)
 }
 
 type orderRepository struct {
@@ -47,11 +47,11 @@ func NewOrderRepository(db *gorm.DB) OrderRepository {
 }
 
 // Create implements [OrderRepository.Create].
-func (r *orderRepository) Create(ctx context.Context, order entity.Order) (entity.Order, error) {
+func (r *orderRepository) Create(ctx context.Context, order model.Order) (model.Order, error) {
 	if err := ctx.Err(); err != nil {
-		return entity.Order{}, err
+		return model.Order{}, err
 	}
-	var created entity.Order
+	var created model.Order
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		row := orderRow{UserID: order.UserID}
 		if err := tx.Create(&row).Error; err != nil {
@@ -66,7 +66,7 @@ func (r *orderRepository) Create(ctx context.Context, order entity.Order) (entit
 				return fmt.Errorf("insert order items: %w", err)
 			}
 		}
-		created = entity.Order{
+		created = model.Order{
 			ID:     row.ID,
 			UserID: row.UserID,
 			Items:  itemEntities(items),
@@ -74,15 +74,15 @@ func (r *orderRepository) Create(ctx context.Context, order entity.Order) (entit
 		return nil
 	})
 	if err != nil {
-		return entity.Order{}, err
+		return model.Order{}, err
 	}
 	return created, nil
 }
 
-func itemEntities(rows []orderItemRow) []entity.OrderItem {
-	items := make([]entity.OrderItem, len(rows))
+func itemEntities(rows []orderItemRow) []model.OrderItem {
+	items := make([]model.OrderItem, len(rows))
 	for i, row := range rows {
-		items[i] = entity.OrderItem{SKU: row.SKU, Quantity: row.Quantity}
+		items[i] = model.OrderItem{SKU: row.SKU, Quantity: row.Quantity}
 	}
 	return items
 }

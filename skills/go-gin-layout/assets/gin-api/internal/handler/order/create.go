@@ -9,8 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 
-	"example.com/gin-layout/internal/entity"
 	"example.com/gin-layout/internal/middleware"
+	"example.com/gin-layout/internal/model"
 	orderservice "example.com/gin-layout/internal/service/order"
 	"example.com/gin-layout/internal/svc"
 )
@@ -38,10 +38,10 @@ type itemResponse struct {
 }
 
 // orderItems 把 HTTP 请求中的明细转成业务实体，保持 HTTP 类型不进入 Service。
-func (r createRequest) orderItems() []entity.OrderItem {
-	items := make([]entity.OrderItem, len(r.Items))
+func (r createRequest) orderItems() []model.OrderItem {
+	items := make([]model.OrderItem, len(r.Items))
 	for i, item := range r.Items {
-		items[i] = entity.OrderItem{SKU: item.SKU, Quantity: item.Quantity}
+		items[i] = model.OrderItem{SKU: item.SKU, Quantity: item.Quantity}
 	}
 	return items
 }
@@ -49,7 +49,7 @@ func (r createRequest) orderItems() []entity.OrderItem {
 const maxRequestBodyBytes = 1 << 20
 
 // newCreateResponse 把业务实体转成 HTTP 响应。
-func newCreateResponse(order entity.Order) createResponse {
+func newCreateResponse(order model.Order) createResponse {
 	items := make([]itemResponse, len(order.Items))
 	for i, item := range order.Items {
 		items[i] = itemResponse{SKU: item.SKU, Quantity: item.Quantity}
@@ -86,7 +86,7 @@ func NewCreateHandler(svcCtx *svc.ServiceContext) gin.HandlerFunc {
 			switch {
 			case errors.Is(err, orderservice.ErrInvalidOrder):
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order"})
-			case errors.Is(err, entity.ErrUserNotFound):
+			case errors.Is(err, model.ErrUserNotFound):
 				c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 			default:
 				svcCtx.Logger.ErrorContext(ctx, "create order",

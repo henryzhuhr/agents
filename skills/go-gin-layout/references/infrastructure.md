@@ -94,7 +94,7 @@ func OpenRedis(ctx context.Context, options *redis.Options) (*redis.Client, erro
 
 这里的缓存是用户资料存储适配器。Redis 登录限流的 `Allow` 能力应放在 `internal/infra/ratelimit/`，由 `app` 装配供 Service 调用，不放入 `Repo` 或登录 middleware；详见 [仓储与限流职责](../SKILL.md#redis-登录限流器的归属)。
 
-业务缓存放在 `internal/repository/user_cache.go`；下面的用户资料缓存复用示例项目的 `entity.User`，明确区分“未命中”和“操作失败”。
+业务缓存放在 `internal/repository/user_cache.go`；下面的用户资料缓存复用示例项目的 `model.User`，明确区分“未命中”和“操作失败”。
 
 ```go
 package repository
@@ -106,7 +106,7 @@ import (
 	"fmt"
 	"time"
 
-	"example.com/gin-layout/internal/entity"
+	"example.com/gin-layout/internal/model"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -119,22 +119,22 @@ func NewCache(client *redis.Client, ttl time.Duration) *Cache {
 	return &Cache{client: client, ttl: ttl}
 }
 
-func (c *Cache) Get(ctx context.Context, id uint64) (entity.User, bool, error) {
+func (c *Cache) Get(ctx context.Context, id uint64) (model.User, bool, error) {
 	raw, err := c.client.Get(ctx, fmt.Sprintf("user:profile:%d", id)).Bytes()
 	if errors.Is(err, redis.Nil) {
-		return entity.User{}, false, nil
+		return model.User{}, false, nil
 	}
 	if err != nil {
-		return entity.User{}, false, err
+		return model.User{}, false, err
 	}
-	var user entity.User
+	var user model.User
 	if err := json.Unmarshal(raw, &user); err != nil {
-		return entity.User{}, false, err
+		return model.User{}, false, err
 	}
 	return user, true, nil
 }
 
-func (c *Cache) Put(ctx context.Context, user entity.User) error {
+func (c *Cache) Put(ctx context.Context, user model.User) error {
 	raw, err := json.Marshal(user)
 	if err != nil {
 		return err
